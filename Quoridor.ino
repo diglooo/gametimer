@@ -4,14 +4,6 @@
 #include <avr/wdt.h>
 #include"WearLevelling.h"
 
-
-struct EEPData
-{
-	uint32_t totalPlayedSeconds=0;
-};
-
-EEPData eepdata;
-
 //ARDUINO PIN FUNCTIONS
 #define PUMP_OUT		9
 #define LCD_POWER1		7
@@ -42,8 +34,16 @@ EEPData eepdata;
 #define GAME_STATE_END			4
 #define GAME_STATE_SLEEP		5
 
-//eeprom wear levelling
+//eeprom wear levelling library
 E2WearLevelling WL;
+
+//EEPROM stored object
+struct EEPData
+{
+	uint32_t totalPlayedSeconds = 0;
+} eepdata;
+
+//HD44780 library
 LiquidCrystal LCD(LCD_RS, LCD_ENABLE, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 
 char lcdstr[20];
