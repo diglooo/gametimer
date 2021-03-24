@@ -15,17 +15,23 @@ struct EEPData
 
 EEPData eepdata;
 
+//ARDUINO PIN FUNCTIONS
 #define PUMP_OUT 9
 #define LCD_POWER1 7
 #define LCD_POWER2 8
 #define BTN_MOVE_BLACK 3
 #define BTN_MOVE_WHITE 2
 #define BTN_MOVE_START 4
+
+//CONSTANTS
 #define DEBOUNCE_TIME 200
 #define LONGPRESS_TIME 1000
 #define WHITE 1
 #define BLACK 0
+#define GUI_UPDATE_INTERVAL_MS 300
+#define SLEEP_TIMEOUT 30000
 
+//STATES
 #define GAME_STATE_INIT			0	
 #define GAME_STATE_PLAYING		1
 #define GAME_STATE_WAIT_START	2
@@ -33,8 +39,6 @@ EEPData eepdata;
 #define GAME_STATE_END			4
 #define GAME_STATE_SLEEP		5
 
-#define GUI_UPDATE_INTERVAL_MS 300
-#define SLEEP_TIMEOUT 30000
 
 char lcdstr[20];
 int gameState= GAME_STATE_INIT, oldGameState= GAME_STATE_INIT;
@@ -55,6 +59,7 @@ uint16_t batteryVoltage = 5200;
 int guiTime=0;
 int pressTime=0;
 
+//CUSTOM CHAR BITMAPS
 byte batt7[] = {
   B01110,
   B11111,
@@ -143,19 +148,23 @@ byte batt0[] = {
   B10001
 };
 
-
+//INTERRUPT ROUTINE CALLED BY TIMER1 OVERFLOW 100HZ
+//always active
 ISR(TIMER1_COMPA_vect)
 {
-  if((gameState== GAME_STATE_PLAYING) && (playerTicks[WHITE]==0 || playerTicks[BLACK]==0)) {oldGameState=gameState; gameState= GAME_STATE_END;}
-  if(gameState== GAME_STATE_PLAYING)
-  {
-    playerTicks[playerThinking]--;
-    totalTicks++;
-  }
+	//decrement game time
+	if((gameState== GAME_STATE_PLAYING) && (playerTicks[WHITE]==0 || playerTicks[BLACK]==0)) {oldGameState=gameState; gameState= GAME_STATE_END;}
+	if(gameState== GAME_STATE_PLAYING)
+	{
+		playerTicks[playerThinking]--;
+		totalTicks++;
+	}
 
-  digitalWrite(PUMP_OUT, !digitalRead(PUMP_OUT));
+	//generate 100hz square wave to drive the charge pump for LCD contrast -5V
+	digitalWrite(PUMP_OUT, !digitalRead(PUMP_OUT));
 }
 
+//PORT CHANGE INTERRUPT (KEY PESS)
 ISR(PCINT2_vect)
 {
 	if(!digitalRead(BTN_MOVE_BLACK))
@@ -245,20 +254,17 @@ uint16_t readVcc()
 	#else
 		ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
 	#endif
-
 	delay(100); // Wait for Vref to settle
 	ADCSRA |= _BV(ADSC); // Start conversion
 	while (bit_is_set(ADCSRA, ADSC)); // measuring
-
 	uint8_t low = ADCL; // must read ADCL first - it then locks ADCH
 	uint8_t high = ADCH; // unlocks both
-
 	long result = (high << 8) | low;
-
 	result = 1125300L / result; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
 	return result; // Vcc in millivolts
 }
 
+//render string in format 12:34
 void ticksToMMSS(unsigned long ticks, char *str)
 {
   unsigned long mm,ss,dd;
@@ -269,13 +275,16 @@ void ticksToMMSS(unsigned long ticks, char *str)
 
 void initAll()
 {
+	//LCD power supply pins
 	pinMode(LCD_POWER1, OUTPUT);
 	digitalWrite(LCD_POWER1, HIGH);
 	pinMode(LCD_POWER2, OUTPUT);
 	digitalWrite(LCD_POWER2, HIGH);
 
+	//charge pump output
 	pinMode(PUMP_OUT, OUTPUT);
 
+	//button inputs
 	pinMode(BTN_MOVE_BLACK, INPUT_PULLUP); //PCINT18
 	pinMode(BTN_MOVE_WHITE, INPUT_PULLUP); //PCINT19
 	pinMode(BTN_MOVE_START, INPUT_PULLUP); //PCINT20
@@ -292,6 +301,7 @@ void initAll()
 	WL.init();
 	WL.readFromEEPROM(&eepdata, sizeof(eepdata));
 
+	//http://www.8bit-era.cz/arduino-timer-interrupts-calculator.html
 	// TIMER 1 for interrupt frequency 100 Hz:
 	cli(); // stop interrupts
 	TCCR1A = 0; // set entire TCCR1A register to 0
@@ -307,9 +317,10 @@ void initAll()
 	TIMSK1 |= (1 << OCIE1A);
 	sei(); // allow interrupts
 
-	// set up the LCD's number of columns and rows:
+	//set LCD columns and rows
 	lcd.begin(24, 2);
 
+	//loar custom chars in LCD ram
 	lcd.createChar(0, batt0);
 	lcd.createChar(1, batt1);
 	lcd.createChar(2, batt2);
@@ -318,8 +329,9 @@ void initAll()
 	lcd.createChar(5, batt5);
 	lcd.createChar(6, batt6);
 	lcd.createChar(7, batt7);
-
 	lcd.clear();
+
+	//recall value from EEPROM
 	if (!WL.checkDataOnEEPROM(sizeof(EEPData)))
 	{
 		lcd.setCursor(0, 0);
@@ -348,29 +360,24 @@ void initAll()
 	
 }
 
-void setup() 
+void animateArrowL(int GUITicks, char* out)
 {
-	initAll();
+	switch (GUITicks % 3)
+	{
+	case 0: sprintf(out, "  <"); break;
+	case 1: sprintf(out, " <<"); break;
+	case 2: sprintf(out, "<<<"); break;
+	}
 }
 
-void animateArrowL(int guit, char* out)
+void animateArrowR(int GUITicks, char* out)
 {
-  switch(guit%3)
-  {
-    case 0: sprintf(out,"  <"); break;
-    case 1: sprintf(out," <<"); break;
-    case 2: sprintf(out,"<<<"); break;
-  }
-}
-
-void animateArrowR(int guit, char* out)
-{
-  switch(guit%3)
-  {
-    case 0: sprintf(out,">  "); break;
-    case 1: sprintf(out,">> "); break;
-    case 2: sprintf(out,">>>"); break;
-  }
+	switch (GUITicks % 3)
+	{
+	case 0: sprintf(out, ">  "); break;
+	case 1: sprintf(out, ">> "); break;
+	case 2: sprintf(out, ">>>"); break;
+	}
 }
 
 long mapLim(long x, long in_min, long in_max, long out_min, long out_max)
@@ -380,10 +387,15 @@ long mapLim(long x, long in_min, long in_max, long out_min, long out_max)
 	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+//arduino system function: called at power-up
+void setup() 
+{
+	initAll();
+}
 
+//arduino main loop
 void loop() 
 {
-
     char arrowAniStr[8];
     char gameStatusString[8];
     //set game duration
@@ -425,20 +437,29 @@ void loop()
 	if (gameState == GAME_STATE_SLEEP)
 	{
 		lcd.clear();
+		//turn off LCD
 		digitalWrite(LCD_POWER1, LOW);
 		digitalWrite(LCD_POWER2, LOW);
+
+		//turn off charge pump
 		digitalWrite(PUMP_OUT, LOW);
+
+		//set pins as input
 		pinMode(LCD_POWER1, INPUT);
 		pinMode(LCD_POWER2, INPUT);
 		pinMode(PUMP_OUT,   INPUT);
+
 		pinMode(BTN_MOVE_BLACK, OUTPUT); //PCINT18
 		pinMode(BTN_MOVE_WHITE, OUTPUT); //PCINT19
 		digitalWrite(BTN_MOVE_BLACK, LOW);
 		digitalWrite(BTN_MOVE_WHITE, LOW);
-
 		idleTimer = 0;
 		delay(200);
+
+		//HALT CPU
 		LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
+
+		//wakeup starts from here
 		gameState = GAME_STATE_INIT;
 		initAll();
 	}
