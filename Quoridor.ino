@@ -4,9 +4,6 @@
 #include <avr/wdt.h>
 #include"WearLevelling.h"
 
-E2WearLevelling WL;
-const int rs = A0, en = A1, d4 = 13, d5 = 12, d6 = 11, d7 = 10;
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
 struct EEPData
 {
@@ -16,12 +13,18 @@ struct EEPData
 EEPData eepdata;
 
 //ARDUINO PIN FUNCTIONS
-#define PUMP_OUT 9
-#define LCD_POWER1 7
-#define LCD_POWER2 8
+#define PUMP_OUT		9
+#define LCD_POWER1		7
+#define LCD_POWER2		8
 #define BTN_MOVE_BLACK 3
 #define BTN_MOVE_WHITE 2
 #define BTN_MOVE_START 4
+#define LCD_RS		A0
+#define LCD_ENABLE	A1
+#define LCD_D4		13
+#define LCD_D5		12
+#define LCD_D6		11
+#define LCD_D7		10
 
 //CONSTANTS
 #define DEBOUNCE_TIME 200
@@ -39,6 +42,9 @@ EEPData eepdata;
 #define GAME_STATE_END			4
 #define GAME_STATE_SLEEP		5
 
+//eeprom wear levelling
+E2WearLevelling WL;
+LiquidCrystal LCD(LCD_RS, LCD_ENABLE, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 
 char lcdstr[20];
 int gameState= GAME_STATE_INIT, oldGameState= GAME_STATE_INIT;
@@ -48,9 +54,9 @@ volatile unsigned int playerThinking=0;
 volatile unsigned long playerTicks[2]={0, 0};
 volatile unsigned long totalTicks=0;
 volatile unsigned int gameMoves[2]={0, 0};
-volatile unsigned long blackDebMillis=0;
-volatile unsigned long whiteDebMillis=0;
-volatile unsigned long startDebMillis=0;
+volatile unsigned long blackDebounceMillis=0;
+volatile unsigned long whiteDebounceMillis=0;
+volatile unsigned long startDebounceMillis=0;
 volatile unsigned long gameDurationMinutes=5;
 unsigned long idleTimer = 0;
 unsigned long lastAdcMillis = 0;
@@ -169,7 +175,7 @@ ISR(PCINT2_vect)
 {
 	if(!digitalRead(BTN_MOVE_BLACK))
 	{
-		if(millis()-blackDebMillis>DEBOUNCE_TIME)
+		if(millis()-blackDebounceMillis>DEBOUNCE_TIME)
 		{
 			switch(gameState)
 			{
@@ -192,12 +198,12 @@ ISR(PCINT2_vect)
 			}
 
 		}
-    blackDebMillis=millis();
+    blackDebounceMillis=millis();
 	}
  
 	if(!digitalRead(BTN_MOVE_WHITE))
 	{
-		if(millis()-whiteDebMillis>DEBOUNCE_TIME)
+		if(millis()-whiteDebounceMillis>DEBOUNCE_TIME)
 		{
 			switch(gameState)
 			{
@@ -219,12 +225,12 @@ ISR(PCINT2_vect)
 				break;
 			}
 		}
-		whiteDebMillis=millis();
+		whiteDebounceMillis=millis();
 	}
 
 	if(!digitalRead(BTN_MOVE_START))
 	{
-		if(millis()-startDebMillis>DEBOUNCE_TIME)
+		if(millis()-startDebounceMillis>DEBOUNCE_TIME)
 		{
 			oldGameState=gameState;
 			switch(gameState)
@@ -235,7 +241,7 @@ ISR(PCINT2_vect)
 				case GAME_STATE_PAUSE:		gameState= GAME_STATE_PLAYING; break;
 			}
 		}
-		startDebMillis=millis();
+		startDebounceMillis=millis();
 	}
 
 	idleTimer = 0;
@@ -318,41 +324,41 @@ void initAll()
 	sei(); // allow interrupts
 
 	//set LCD columns and rows
-	lcd.begin(24, 2);
+	LCD.begin(24, 2);
 
 	//loar custom chars in LCD ram
-	lcd.createChar(0, batt0);
-	lcd.createChar(1, batt1);
-	lcd.createChar(2, batt2);
-	lcd.createChar(3, batt3);
-	lcd.createChar(4, batt4);
-	lcd.createChar(5, batt5);
-	lcd.createChar(6, batt6);
-	lcd.createChar(7, batt7);
-	lcd.clear();
+	LCD.createChar(0, batt0);
+	LCD.createChar(1, batt1);
+	LCD.createChar(2, batt2);
+	LCD.createChar(3, batt3);
+	LCD.createChar(4, batt4);
+	LCD.createChar(5, batt5);
+	LCD.createChar(6, batt6);
+	LCD.createChar(7, batt7);
+	LCD.clear();
 
 	//recall value from EEPROM
 	if (!WL.checkDataOnEEPROM(sizeof(EEPData)))
 	{
-		lcd.setCursor(0, 0);
-		lcd.print("EEPROM err");
+		LCD.setCursor(0, 0);
+		LCD.print("EEPROM err");
 		WL.format();
 		WL.init();
-		lcd.setCursor(0, 1);
-		lcd.print("FORMAT");
+		LCD.setCursor(0, 1);
+		LCD.print("FORMAT");
 		eepdata.totalPlayedSeconds = 0;
 		WL.writeToEEPROM(&eepdata, sizeof(eepdata));
 		delay(1000);
 	}
 	
-	lcd.setCursor(0, 0);
-	lcd.print("Tot min: ");
-	lcd.print(eepdata.totalPlayedSeconds/600);
+	LCD.setCursor(0, 0);
+	LCD.print("Tot min: ");
+	LCD.print(eepdata.totalPlayedSeconds/600);
 
-	lcd.setCursor(0, 1);
-	lcd.print("Batt mV: ");
+	LCD.setCursor(0, 1);
+	LCD.print("Batt mV: ");
 	batteryVoltage = readVcc();
-	lcd.print(batteryVoltage);
+	LCD.print(batteryVoltage);
 
 	delay(1000);
 	playerTicks[0] = gameDurationMinutes * 60 * 100;
@@ -436,7 +442,7 @@ void loop()
 
 	if (gameState == GAME_STATE_SLEEP)
 	{
-		lcd.clear();
+		LCD.clear();
 		//turn off LCD
 		digitalWrite(LCD_POWER1, LOW);
 		digitalWrite(LCD_POWER2, LOW);
@@ -494,7 +500,7 @@ void loop()
     else pressTime=0;    
     if(pressTime>LONGPRESS_TIME)
     {
-      startDebMillis=millis();
+      startDebounceMillis=millis();
       gameState= GAME_STATE_INIT;
     }
 
@@ -505,27 +511,27 @@ void loop()
 	}
 
 	//PRINT GAME STATE
-	lcd.setCursor(0, 0);
-	lcd.print(lcdstr);
+	LCD.setCursor(0, 0);
+	LCD.print(lcdstr);
 
     //PRINT GAME MOVES
-	lcd.setCursor(0, 1);
+	LCD.setCursor(0, 1);
     sprintf(lcdstr,"%-3dM        M%3d",gameMoves[0],gameMoves[1]);
-    lcd.print(lcdstr);
+    LCD.print(lcdstr);
 
 	//PRINT battery
-	lcd.setCursor(8, 1);
+	LCD.setCursor(8, 1);
 	int battLevel = mapLim((long)batteryVoltage, 2800, 3400, 1, 7);
 	int battLevelP = mapLim((long)batteryVoltage, 2800, 3400, 0, 100);
-	lcd.write((byte)battLevel);
+	LCD.write((byte)battLevel);
 	
     //PRINT TIME
-    lcd.setCursor(16, 0);
+    LCD.setCursor(16, 0);
     ticksToMMSS(playerTicks[0],lcdstr);
-    lcd.print(lcdstr);
-    lcd.setCursor(19, 1);
+    LCD.print(lcdstr);
+    LCD.setCursor(19, 1);
     ticksToMMSS(playerTicks[1],lcdstr);
-    lcd.print(lcdstr);
+    LCD.print(lcdstr);
 
 	delay(GUI_UPDATE_INTERVAL_MS);
 }
